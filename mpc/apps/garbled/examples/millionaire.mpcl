@@ -1,0 +1,12 @@
+// -*- go -*-
+//
+
+package main
+
+func main(a, b int1048576) bool {
+	if a > b {
+		return true
+	} else {
+		return false
+	}
+}
