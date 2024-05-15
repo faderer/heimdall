@@ -11,3 +11,6 @@ urllib3==1.24.2
 pyzmq==23.2.0
 sympy==1.10.1
 pvss==0.2.0
+pytest
+eth-brownie
+git+https://github.com/Zokrates/pycrypto
