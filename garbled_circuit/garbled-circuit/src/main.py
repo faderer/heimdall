@@ -59,8 +59,10 @@ class Alice(YaoGarbler):
         super().__init__(circuits)
         alice_end = time.time()
         print(f"Garble time: {alice_end - alice_start}")
+        send_start = time.time()
         self.socket = util.GarblerSocket()
         self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
+        print(f"Send time: {time.time() - send_start}")
         print(f"OT enabled: {oblivious_transfer}")
 
     def start(self):

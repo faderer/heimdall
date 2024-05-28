@@ -77,11 +77,14 @@ if __name__ == '__main__':
     # init, genparams
     pvss_init = Pvss()
     params = create_ristretto_255_parameters(pvss_init)
+    print('Init time:', time.time() - init_start)
 
+    alice_start = time.time()
     # alice, genuser
     pvss_alice = Pvss()
     pvss_alice.set_params(params)
     alice_priv, alice_pub = pvss_alice.create_user_keypair("Alice")
+    print('Alice time:', time.time() - alice_start)
 
     # boris, genuser
     pvss_boris = Pvss()
@@ -93,6 +96,7 @@ if __name__ == '__main__':
     pvss_chris.set_params(params)
     chris_priv, chris_pub = pvss_chris.create_user_keypair("Chris")
 
+    dealer_start = time.time()
     # dealer, splitsecret
     pvss_dealer = Pvss()
     pvss_dealer.set_params(params)
@@ -100,13 +104,14 @@ if __name__ == '__main__':
     pvss_dealer.add_user_public_key(alice_pub)
     pvss_dealer.add_user_public_key(boris_pub)
     secret0, shares = pvss_dealer.share_secret(2)
+    print('Dealer time:', time.time() - dealer_start)
 
+    pvss_receiver_time = time.time()
     # receiver, genreceiver
     pvss_receiver = Pvss()
     pvss_receiver.set_params(params)
     recv_priv, recv_pub = pvss_receiver.create_receiver_keypair("receiver")
-
-    print('Initialization time:', time.time() - init_start)
+    print('Receiver time:', time.time() - pvss_receiver_time)
 
 #     init_command = '''mkdir test
 # cd test
@@ -147,13 +152,14 @@ if __name__ == '__main__':
     # con_command = '''pvss datadir reconstruct recv.key secret1.der'''
     # con_pvss = result = subprocess.run(con_command, shell=True, text=True, capture_output=True)
     
-    recover_start = time.time()
+    verify_start = time.time()
     # boris, reencrypt
     pvss_boris.add_user_public_key(alice_pub)
     pvss_boris.add_user_public_key(chris_pub)
     pvss_boris.set_shares(shares)
     pvss_boris.set_receiver_public_key(recv_pub)
     reenc_boris = pvss_boris.reencrypt_share(boris_priv)
+    print('Verification time:', time.time() - verify_start)
 
     # alice, reencrypt
     pvss_alice.add_user_public_key(boris_pub)
@@ -162,6 +168,7 @@ if __name__ == '__main__':
     pvss_alice.set_receiver_public_key(recv_pub)
     reenc_alice = pvss_alice.reencrypt_share(alice_priv)
 
+    recover_start = time.time()
     # receiver, reconstruct
     pvss_receiver.add_user_public_key(boris_pub)
     pvss_receiver.add_user_public_key(chris_pub)
