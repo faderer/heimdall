@@ -1,8 +1,8 @@
 import hashlib
 import logging
 import pickle
-import util
-import yao
+from . import util
+from . import yao
 import time
 
 
@@ -22,10 +22,10 @@ class ObliviousTransfer:
             The result of the yao circuit evaluation.
         """
         logging.debug("Sending inputs to Bob")
-        self.socket.send(a_inputs)
+        self.socket.send_to_evaluator(a_inputs)
 
         for _ in range(len(b_keys)):
-            w = self.socket.receive()  # receive gate ID where to perform OT
+            w = self.socket.receive_from_evaluator()  # receive gate ID where to perform OT
             logging.debug(f"Received gate ID {w}")
 
             if self.enabled:  # perform oblivious transfer
@@ -35,9 +35,9 @@ class ObliviousTransfer:
             else:
                 to_send = (b_keys[w][0], b_keys[w][1])
                 # print(f"Sending key pair, key {b_keys[w][0]} selected")
-                self.socket.send(to_send)
+                self.socket.send_to_evaluator(to_send)
 
-        return self.socket.receive()
+        return self.socket.receive_from_evaluator()
 
     def send_result(self, circuit, g_tables, pbits_out, b_inputs):
         """Evaluate circuit and send the result to Alice.

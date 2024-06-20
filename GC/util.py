@@ -9,7 +9,7 @@ import zmq
 LOCAL_PORT = 4080
 SERVER_HOST = "localhost"
 SERVER_PORT = 4080
-
+GARBLER_PORT = 4081
 
 class Socket:
     def __init__(self, socket_type):
@@ -46,11 +46,29 @@ class EvaluatorSocket(Socket):
         super().__init__(zmq.REP)
         self.socket.bind(endpoint)
 
-
 class GarblerSocket(Socket):
-    def __init__(self, endpoint=f"tcp://{SERVER_HOST}:{SERVER_PORT}"):
+    def __init__(self, server_endpoint=f"tcp://*:{GARBLER_PORT}", evaluator_endpoint=f"tcp://{SERVER_HOST}:{SERVER_PORT}"):
+        super().__init__(zmq.REP)
+        self.socket.bind(server_endpoint)
+        self.evaluator_socket = Socket(zmq.REQ)
+        self.evaluator_socket.socket.connect(evaluator_endpoint)
+    def send_to_evaluator(self, message):
+        self.evaluator_socket.send(message)
+    def send_wait_to_evaluator(self, message):
+        response = self.evaluator_socket.send_wait(message)
+        return response
+    def receive_from_evaluator(self):
+        return self.evaluator_socket.receive()
+
+class UserSocket(Socket):
+    def __init__(self, server_endpoint=f"tcp://{SERVER_HOST}:{GARBLER_PORT}"):
         super().__init__(zmq.REQ)
-        self.socket.connect(endpoint)
+        self.socket.connect(server_endpoint)    
+
+# class GarblerSocket(Socket):
+#     def __init__(self, endpoint=f"tcp://{SERVER_HOST}:{SERVER_PORT}"):
+#         super().__init__(zmq.REQ)
+#         self.socket.connect(endpoint)
 
 
 # PRIME GROUP
