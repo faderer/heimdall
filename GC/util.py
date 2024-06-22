@@ -60,10 +60,37 @@ class GarblerSocket(Socket):
     def receive_from_evaluator(self):
         return self.evaluator_socket.receive()
 
-class UserSocket(Socket):
-    def __init__(self, server_endpoint=f"tcp://{SERVER_HOST}:{GARBLER_PORT}"):
-        super().__init__(zmq.REQ)
-        self.socket.connect(server_endpoint)    
+class UserSocket:
+    def __init__(self, garbler_endpoint=f"tcp://{SERVER_HOST}:{GARBLER_PORT}", evaluator_endpoint=f"tcp://{SERVER_HOST}:{SERVER_PORT}"):
+        self.garbler_socket = Socket(zmq.REQ)
+        self.garbler_socket.socket.connect(garbler_endpoint)
+        self.evaluator_socket = Socket(zmq.REQ)
+        self.evaluator_socket.socket.connect(evaluator_endpoint)
+
+    def send_to_garbler(self, message):
+        self.garbler_socket.send(message)
+
+    def send_wait_to_garbler(self, message):
+        response = self.garbler_socket.send_wait(message)
+        return response
+
+    def receive_from_garbler(self):
+        return self.garbler_socket.receive()
+
+    def send_to_evaluator(self, message):
+        self.evaluator_socket.send(message)
+
+    def send_wait_to_evaluator(self, message):
+        response = self.evaluator_socket.send_wait(message)
+        return response
+
+    def receive_from_evaluator(self):
+        return self.evaluator_socket.receive()
+
+# class UserSocket(Socket):
+#     def __init__(self, server_endpoint=f"tcp://{SERVER_HOST}:{GARBLER_PORT}"):
+#         super().__init__(zmq.REQ)
+#         self.socket.connect(server_endpoint)    
 
 # class GarblerSocket(Socket):
 #     def __init__(self, endpoint=f"tcp://{SERVER_HOST}:{SERVER_PORT}"):

@@ -1,11 +1,17 @@
 from GC import ot
 from GC import yao
 from GC import util
+from PVTSS import puzzle
+from pvss import Pvss
+from pvss.ristretto_255 import create_ristretto_255_parameters
 from abc import ABC, abstractmethod
 import logging
 import time
 import base64
 import os
+import subprocess
+import json
+import re
 from python_snarks import Groth, Calculator, gen_proof, is_valid
 from zkpy.ptau import PTau
 from zkpy.circuit import Circuit, GROTH, PLONK, FFLONK
@@ -40,7 +46,7 @@ class YaoGarbler(ABC):
         pass
 
 class ServiceProvider(YaoGarbler):
-    def __init__(self, circuits, oblivious_transfer=False):
+    def __init__(self, circuits, pvss_dealer, oblivious_transfer=False):
         alice_start = time.time()
         super().__init__(circuits)
         alice_end = time.time()
@@ -48,6 +54,7 @@ class ServiceProvider(YaoGarbler):
         send_start = time.time()
         self.socket = util.GarblerSocket()
         self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
+        self.pvss_dealer = pvss_dealer
         print(f"Send time: {time.time() - send_start}")
         print(f"OT enabled: {oblivious_transfer}")
 
@@ -55,6 +62,7 @@ class ServiceProvider(YaoGarbler):
         """Start Yao protocol."""
         for circuit in self.circuits:
             to_send = {
+                "source": "garbler",
                 "circuit": circuit["circuit"],
                 "garbled_tables": circuit["garbled_tables"],
                 "pbits_out": circuit["pbits_out"],
@@ -141,6 +149,10 @@ class ServiceProvider(YaoGarbler):
                     # Generate b_decode_keys for the requested circuit
                     pbits, keys = circuit["pbits"], circuit["keys"]
                     b_wires = circuit["circuit"].get("bob", [])
+                    b_keys = {  # map from Bob's wires to a pair (key, encr_bit)
+                        w: self._get_encr_bits(pbits[w], key0, key1)
+                        for w, (key0, key1) in keys.items() if w in b_wires
+                    }
                     b_decode_keys = {
                         w: self._get_encr_bits(pbits[w], 
                                                int.from_bytes(base64.urlsafe_b64decode(keys[w][0]), byteorder='big'), 
@@ -154,9 +166,12 @@ class ServiceProvider(YaoGarbler):
 
 class AccessController:
 
-    def __init__(self, oblivious_transfer=False):
+    def __init__(self, pvss_alice, pvss_boris, pvss_chris, oblivious_transfer=False):
         self.socket = util.EvaluatorSocket()
         self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
+        self.pvss_alice = pvss_alice
+        self.pvss_boris = pvss_boris
+        self.pvss_chris = pvss_chris
 
     def listen(self):
         """Start listening for Alice messages."""
@@ -175,77 +190,121 @@ class AccessController:
         Args:
             entry: A dict representing the circuit to evaluate.
         """
-        circuit, pbits_out = entry["circuit"], entry["pbits_out"]
-        garbled_tables = entry["garbled_tables"]
-        a_wires = circuit.get("alice", [])  # list of Alice's wires
-        b_wires = circuit.get("bob", [])  # list of Bob's wires
-        print(f"Bobs wires: {b_wires}")
-        N = len(a_wires) + len(b_wires)
+        if entry["source"] == "garbler":
+            circuit, pbits_out = entry["circuit"], entry["pbits_out"]
+            garbled_tables = entry["garbled_tables"]
+            a_wires = circuit.get("alice", [])  # list of Alice's wires
+            b_wires = circuit.get("bob", [])  # list of Bob's wires
+            print(f"Bobs wires: {b_wires}")
+            N = len(a_wires) + len(b_wires)
 
-        print(f"Received {circuit['id']}")
-        print(f"circuit: {circuit}")
+            print(f"Received {circuit['id']}")
+            print(f"circuit: {circuit}")
 
-        # Generate all possible inputs for both Alice and Bob
-        for bits in [format(n, 'b').zfill(N) for n in range(2**N)]:
-            bits_b = [int(b) for b in bits[N - len(b_wires):]]  # Bob's inputs
+            # Generate all possible inputs for both Alice and Bob
+            for bits in [format(n, 'b').zfill(N) for n in range(2**N)]:
+                bits_b = [int(b) for b in bits[N - len(b_wires):]]  # Bob's inputs
 
-            # Create dict mapping each wire of Bob to Bob's input
-            b_inputs_clear = {
-                b_wires[i]: bits_b[i]
-                for i in range(len(b_wires))
-            }
+                # Create dict mapping each wire of Bob to Bob's input
+                b_inputs_clear = {
+                    b_wires[i]: bits_b[i]
+                    for i in range(len(b_wires))
+                }
 
-            # Evaluate and send result to Alice
-            self.ot.send_result(circuit, garbled_tables, pbits_out,
-                                b_inputs_clear)
+                # Evaluate and send result to Alice
+                self.ot.send_result(circuit, garbled_tables, pbits_out,
+                                    b_inputs_clear)
+        elif entry["source"] == "user":
+            proof = entry["proof"]
+            public = entry["public"]
+            verification_key = entry["verification_key"]
+            command9 = "snarkjs groth16 verify verification_key.json public.json proof.json"
+            original_directory = os.getcwd()
+            os.chdir(os.getcwd() + "/ZK/circuit")
+            result = subprocess.run(command9, capture_output=True, shell=True, check=True)
+            output = result.stdout.decode('utf-8')
+            clean_output = re.sub(r'\x1b\[[0-9;]*m', '', output).strip()
+            if "snarkJS: OK" in clean_output:
+                print("Verification successful")
+            else:
+                print("Verification failed")
+            os.chdir(original_directory)
+
 
 class User:
-    def __init__(self):
+    def __init__(self, pvss_receiver):
         self.socket = util.UserSocket()
+        self.ot = ot.ObliviousTransfer(self.socket, enabled=False)
+        self.pvss_receiver = pvss_receiver
     
     def request_b_decode_keys(self, circuit_id):
         request = {"circuit_id": circuit_id}
         print("Sending request:", request)
-        self.socket.send(request)
+        self.socket.send_to_garbler(request)
         
-        response = self.socket.receive()
+        response = self.socket.receive_from_garbler()
         print("Received b_decode_keys:", response)
         return response
     
     def start(self):
         labels = self.request_b_decode_keys("Smart")
+        data = {
+            "attr1": 1,
+            "attr2": 0,
+            "key1_0": labels[3][0][0],
+            "key1_1": labels[3][1][0],
+            "key2_0": labels[4][0][0],
+            "key2_1": labels[4][1][0],
+        }
+        with open("ZK/circuit/input.json", "w") as f:
+            json.dump(data, f, indent=4)
         
-        ptau = PTau()
-        ptau.start() 
-        ptau.contribute()
-        ptau.beacon()
-        ptau.prep_phase2()
-        ptau.verify()
+        command1 = "snarkjs powersoftau new bn128 12 pot12_0000.ptau -v"
+        command2 = "snarkjs powersoftau contribute pot12_0000.ptau pot12_0001.ptau --name=\"First contribution\" -v"
+        command3 = "snarkjs powersoftau prepare phase2 pot12_0001.ptau pot12_final.ptau -v"
+        command4 = "snarkjs groth16 setup commit_ped.r1cs pot12_final.ptau commit_ped_0000.zkey"
+        command5 = "snarkjs zkey contribute commit_ped_0000.zkey commit_ped_0001.zkey --name=\"1st Contributor Name\" -v"
+        command6 = "snarkjs zkey export verificationkey commit_ped_0001.zkey verification_key.json"
+        
+        command7 = "snarkjs wtns calculate commit_ped.wasm input.json witness.wtns"
+        command8 = "snarkjs groth16 prove commit_ped_0001.zkey witness.wtns proof.json public.json"
+        command9 = "snarkjs groth16 verify verification_key.json public.json proof.json"
 
+        original_directory = os.getcwd()
+        os.chdir(os.getcwd() + "/ZK/circuit")
+        # subprocess.run(command1, shell=True, check=True)
+        # subprocess.run(command2, shell=True, check=True)
+        # subprocess.run(command3, shell=True, check=True)
+        # subprocess.run(command4, shell=True, check=True)
+        # subprocess.run(command5, shell=True, check=True)
+        # subprocess.run(command6, shell=True, check=True)
+        subprocess.run(command7, shell=True, check=True)
+        subprocess.run(command8, shell=True, check=True)
+        os.chdir(original_directory)
 
-        # print("1. setting up...")
-        # gr = Groth(os.path.dirname(os.path.realpath(__file__)) + "/ZK/test-vectors/simple-test/commit_ped.r1cs")
-        # gr.setup_zk()
+        with open("ZK/circuit/proof.json", "r") as f:
+            proof = json.load(f)
+        with open("ZK/circuit/public.json", "r") as f:
+            public = json.load(f)
+        with open("ZK/circuit/verification_key.json", "r") as f:
+            verification_key = json.load(f)
+        
+        to_send = {
+            "source": "user",
+            "proof": proof,
+            "public": public,
+            "verification_key": verification_key,
+        }
 
-        # ## 2. proving
-        # print("2. proving...")
-        # wasm_path = os.path.dirname(os.path.realpath(__file__)) + "/ZK/test-vectors/simple-test/commit_ped_js/commit_ped.wasm"
-        # c = Calculator(wasm_path)
-        # witness = c.calculate({"attr1": 1, "attr2": 0, "key1_0": labels[3][0][0], "key1_1": 0, "key2_0": 1, "key2_1": 0})
-        # proof, publicSignals = gen_proof(gr.setup["vk_proof"], witness)
-        # print("#"*80)
-        # print(proof)
-        # print("#"*80)
-        # print(publicSignals)
-        # print("#"*80)
+        self.socket.send_to_evaluator(to_send)
 
-        # ## 3. verifying
-        # print("3. verifying...")
-        # result = is_valid(gr.setup["vk_verifier"], proof, publicSignals)
-        # print(result)
-        # assert result == True
-    
-
+        # result = subprocess.run(command9, capture_output=True, shell=True, check=True)
+        # output = result.stdout.decode('utf-8')
+        # clean_output = re.sub(r'\x1b\[[0-9;]*m', '', output).strip()
+        # if "snarkJS: OK" in clean_output:
+        #     print("Verification successful")
+        # else:
+        #     print("Verification failed")
 def main(
     party,
     circuit_path="circuits/default.json",
@@ -255,15 +314,48 @@ def main(
 ):
     logging.getLogger().setLevel(loglevel)
 
+    # init, genparams
+    pvss_init = Pvss()
+    params = create_ristretto_255_parameters(pvss_init)
+
+    # alice, genuser
+    pvss_alice = Pvss()
+    pvss_alice.set_params(params)
+    alice_priv, alice_pub = pvss_alice.create_user_keypair("Alice")
+
+    # boris, genuser
+    pvss_boris = Pvss()
+    pvss_boris.set_params(params)
+    boris_priv, boris_pub = pvss_boris.create_user_keypair("Boris")
+
+    # chris, genuser
+    pvss_chris = Pvss()
+    pvss_chris.set_params(params)
+    chris_priv, chris_pub = pvss_chris.create_user_keypair("Chris")
+
+    # dealer, splitsecret
+    pvss_dealer = Pvss()
+    pvss_dealer.set_params(params)
+    pvss_dealer.add_user_public_key(chris_pub)
+    pvss_dealer.add_user_public_key(alice_pub)
+    pvss_dealer.add_user_public_key(boris_pub)
+    secret0, shares = pvss_dealer.share_secret(2) # put inside
+
+    # receiver, genreceiver
+    pvss_receiver = Pvss()
+    pvss_receiver.set_params(params)
+    recv_priv, recv_pub = pvss_receiver.create_receiver_keypair("receiver")
+
+
     if party == "alice":
-        alice = ServiceProvider(circuit_path, oblivious_transfer=False)
+        alice = ServiceProvider(circuit_path, pvss_dealer, oblivious_transfer=False)
         alice.start()
         alice.listen()
     elif party == "bob":
-        bob = AccessController(oblivious_transfer=False)
+        bob = AccessController(pvss_alice, pvss_boris, pvss_chris, oblivious_transfer=False)
         bob.listen()
     elif party == "carol":
-        carol = User()
+        carol = User(pvss_receiver)
         carol.start()
     elif party == "local":
         local = LocalTest(circuit_path, print_mode=print_mode)
