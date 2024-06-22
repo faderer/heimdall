@@ -46,7 +46,7 @@ class YaoGarbler(ABC):
         pass
 
 class ServiceProvider(YaoGarbler):
-    def __init__(self, circuits, pvss_dealer, oblivious_transfer=False):
+    def __init__(self, circuits, oblivious_transfer=False):
         alice_start = time.time()
         super().__init__(circuits)
         alice_end = time.time()
@@ -54,21 +54,46 @@ class ServiceProvider(YaoGarbler):
         send_start = time.time()
         self.socket = util.GarblerSocket()
         self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
-        self.pvss_dealer = pvss_dealer
+        self.init_dealer()
         print(f"Send time: {time.time() - send_start}")
         print(f"OT enabled: {oblivious_transfer}")
 
+    def init_dealer(self):
+        pvss_init = Pvss()
+        self.params = create_ristretto_255_parameters(pvss_init)
+        self.pvss_dealer = Pvss()
+        self.pvss_dealer.set_params(self.params)
+    def update_dealer(self):
+        result = self.socket.send_wait_to_evaluator(True)
+        self.alice_pub = result["alice_pub"]
+        self.boris_pub = result["boris_pub"]
+        self.chris_pub = result["chris_pub"]
+        self.pvss_dealer.add_user_public_key(self.chris_pub)
+        self.pvss_dealer.add_user_public_key(self.alice_pub)
+        self.pvss_dealer.add_user_public_key(self.boris_pub)
+        self.secret0, self.shares = self.pvss_dealer.share_secret(2)
+        print(f'secret0: {self.secret0}')
+        to_send = {
+            "shares": self.shares,
+        }
+        self.socket.send_wait_to_evaluator(to_send)
+
     def start(self):
         """Start Yao protocol."""
+        # secret0, shares = self.pvss_dealer.share_secret(2) # put inside
+        # print(f"Shares: {shares}")
         for circuit in self.circuits:
             to_send = {
                 "source": "garbler",
                 "circuit": circuit["circuit"],
                 "garbled_tables": circuit["garbled_tables"],
                 "pbits_out": circuit["pbits_out"],
+                "params": self.params,
+                # "shares": shares,
             }
             logging.debug(f"Sending {circuit['circuit']['id']}")
             self.socket.send_wait_to_evaluator(to_send)
+            self.update_dealer()
             self.print(circuit)
 
     def print(self, entry):
@@ -160,18 +185,63 @@ class ServiceProvider(YaoGarbler):
                         for w in b_wires
                     }
                     # Send b_decode_keys to user
-                    self.socket.send(b_decode_keys)
+                    to_send = {
+                        "b_decode_keys": b_decode_keys,
+                        "params": self.params,
+                        "alice_pub": self.alice_pub,
+                        "boris_pub": self.boris_pub,
+                        "chris_pub": self.chris_pub,
+                        "shares": self.shares,
+                    }
+                    self.socket.send(to_send)
                     print("Sent b_decode_keys:", b_decode_keys)
                     break
 
 class AccessController:
 
-    def __init__(self, pvss_alice, pvss_boris, pvss_chris, oblivious_transfer=False):
+    def __init__(self, oblivious_transfer=False):
         self.socket = util.EvaluatorSocket()
         self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
-        self.pvss_alice = pvss_alice
-        self.pvss_boris = pvss_boris
-        self.pvss_chris = pvss_chris
+        # self.pvss_alice = pvss_alice
+        # self.pvss_boris = pvss_boris
+        # self.pvss_chris = pvss_chris
+        # self.alice_priv = alice_priv
+        # self.boris_priv = boris_priv
+        # self.chris_priv = chris_priv
+        # self.pvss_receiver = pvss_receiver
+    
+    def init_ac(self, params):
+        self.pvss_alice = Pvss()
+        self.pvss_alice.set_params(params)
+        self.alice_priv, self.alice_pub = self.pvss_alice.create_user_keypair("Alice")
+
+        # boris, genuser
+        self.pvss_boris = Pvss()
+        self.pvss_boris.set_params(params)
+        self.boris_priv, self.boris_pub = self.pvss_boris.create_user_keypair("Boris")
+
+        # chris, genuser
+        self.pvss_chris = Pvss()
+        self.pvss_chris.set_params(params)
+        self.chris_priv, self.chris_pub = self.pvss_chris.create_user_keypair("Chris")
+        
+        self.socket.receive()
+        to_send = {
+            "alice_pub": self.alice_pub,
+            "boris_pub": self.boris_pub,
+            "chris_pub": self.chris_pub,
+        }
+        self.socket.send(to_send)
+        result = self.socket.receive()
+        self.shares = result["shares"]
+        self.pvss_alice.add_user_public_key(self.chris_pub)
+        self.pvss_alice.add_user_public_key(self.boris_pub)
+        self.pvss_alice.set_shares(self.shares)
+        self.pvss_boris.add_user_public_key(self.alice_pub)
+        self.pvss_boris.add_user_public_key(self.chris_pub)
+        self.pvss_boris.set_shares(self.shares)
+
+        self.socket.send(True)
 
     def listen(self):
         """Start listening for Alice messages."""
@@ -191,6 +261,7 @@ class AccessController:
             entry: A dict representing the circuit to evaluate.
         """
         if entry["source"] == "garbler":
+            self.init_ac(entry["params"])
             circuit, pbits_out = entry["circuit"], entry["pbits_out"]
             garbled_tables = entry["garbled_tables"]
             a_wires = circuit.get("alice", [])  # list of Alice's wires
@@ -214,7 +285,18 @@ class AccessController:
                 # Evaluate and send result to Alice
                 self.ot.send_result(circuit, garbled_tables, pbits_out,
                                     b_inputs_clear)
+            # shares = entry["shares"]
+            # print(f"Shares: {shares}")
+            # self.pvss_boris.set_shares(shares)
+            #######TODO
+            # self.reenc_boris = self.pvss_boris.reencrypt_share(self.boris_priv)
+            # # self.pvss_alice.set_shares(shares)
+            # self.reenc_alice = self.pvss_alice.reencrypt_share(self.alice_priv)
+            # self.pvss_receiver.add_reencrypted_share(self.reenc_alice)
+            # self.pvss_receiver.add_reencrypted_share(self.reenc_boris)
+
         elif entry["source"] == "user":
+            self.socket.receive()
             proof = entry["proof"]
             public = entry["public"]
             verification_key = entry["verification_key"]
@@ -224,7 +306,18 @@ class AccessController:
             result = subprocess.run(command9, capture_output=True, shell=True, check=True)
             output = result.stdout.decode('utf-8')
             clean_output = re.sub(r'\x1b\[[0-9;]*m', '', output).strip()
+            
+            self.pvss_alice.set_receiver_public_key(entry["recv_pub"])
+            self.pvss_boris.set_receiver_public_key(entry["recv_pub"])
+            self.reenc_alice = self.pvss_alice.reencrypt_share(self.alice_priv)
+            self.reenc_boris = self.pvss_boris.reencrypt_share(self.boris_priv)
+            to_send = {
+                "source": "evaluator",
+                "reenc_alice": self.reenc_alice,
+                "reenc_boris": self.reenc_boris,
+            }
             if "snarkJS: OK" in clean_output:
+                self.socket.send(to_send)
                 print("Verification successful")
             else:
                 print("Verification failed")
@@ -232,19 +325,28 @@ class AccessController:
 
 
 class User:
-    def __init__(self, pvss_receiver):
+    def __init__(self):
         self.socket = util.UserSocket()
         self.ot = ot.ObliviousTransfer(self.socket, enabled=False)
-        self.pvss_receiver = pvss_receiver
-    
+
+    def init_receiver(self, params, alice_pub, boris_pub, chris_pub, shares):
+        self.pvss_receiver = Pvss()
+        self.pvss_receiver.set_params(params)
+        self.recv_priv, self.recv_pub = self.pvss_receiver.create_receiver_keypair("receiver")
+        self.pvss_receiver.add_user_public_key(alice_pub)
+        self.pvss_receiver.add_user_public_key(boris_pub)
+        self.pvss_receiver.add_user_public_key(chris_pub)
+        self.pvss_receiver.set_shares(shares)
+
     def request_b_decode_keys(self, circuit_id):
         request = {"circuit_id": circuit_id}
         print("Sending request:", request)
         self.socket.send_to_garbler(request)
         
         response = self.socket.receive_from_garbler()
-        print("Received b_decode_keys:", response)
-        return response
+        print("Received b_decode_keys:", response["b_decode_keys"])
+        self.init_receiver(response["params"], response["alice_pub"], response["boris_pub"], response["chris_pub"], response["shares"])
+        return response["b_decode_keys"]
     
     def start(self):
         labels = self.request_b_decode_keys("Smart")
@@ -294,9 +396,19 @@ class User:
             "proof": proof,
             "public": public,
             "verification_key": verification_key,
+            "recv_pub": self.recv_pub,
         }
 
-        self.socket.send_to_evaluator(to_send)
+        # true = self.socket.receive_from_evaluator()
+        self.socket.send_wait_to_evaluator(to_send)
+        self.socket.send_to_evaluator(True)
+        entry = self.socket.receive_from_evaluator()
+        reenc_alice = entry["reenc_alice"]
+        reenc_boris = entry["reenc_boris"]
+        self.pvss_receiver.add_reencrypted_share(reenc_alice)
+        self.pvss_receiver.add_reencrypted_share(reenc_boris)
+        secret1 = self.pvss_receiver.reconstruct_secret(self.recv_priv)
+        print("Received reencrypted shares:", secret1)
 
         # result = subprocess.run(command9, capture_output=True, shell=True, check=True)
         # output = result.stdout.decode('utf-8')
@@ -314,48 +426,64 @@ def main(
 ):
     logging.getLogger().setLevel(loglevel)
 
-    # init, genparams
-    pvss_init = Pvss()
-    params = create_ristretto_255_parameters(pvss_init)
+    # # init, genparams
+    # pvss_init = Pvss()
+    # params = create_ristretto_255_parameters(pvss_init)
 
-    # alice, genuser
-    pvss_alice = Pvss()
-    pvss_alice.set_params(params)
-    alice_priv, alice_pub = pvss_alice.create_user_keypair("Alice")
+    # # alice, genuser
+    # pvss_alice = Pvss()
+    # pvss_alice.set_params(params)
+    # alice_priv, alice_pub = pvss_alice.create_user_keypair("Alice")
 
-    # boris, genuser
-    pvss_boris = Pvss()
-    pvss_boris.set_params(params)
-    boris_priv, boris_pub = pvss_boris.create_user_keypair("Boris")
+    # # boris, genuser
+    # pvss_boris = Pvss()
+    # pvss_boris.set_params(params)
+    # boris_priv, boris_pub = pvss_boris.create_user_keypair("Boris")
 
-    # chris, genuser
-    pvss_chris = Pvss()
-    pvss_chris.set_params(params)
-    chris_priv, chris_pub = pvss_chris.create_user_keypair("Chris")
+    # # chris, genuser
+    # pvss_chris = Pvss()
+    # pvss_chris.set_params(params)
+    # chris_priv, chris_pub = pvss_chris.create_user_keypair("Chris")
 
-    # dealer, splitsecret
-    pvss_dealer = Pvss()
-    pvss_dealer.set_params(params)
-    pvss_dealer.add_user_public_key(chris_pub)
-    pvss_dealer.add_user_public_key(alice_pub)
-    pvss_dealer.add_user_public_key(boris_pub)
-    secret0, shares = pvss_dealer.share_secret(2) # put inside
+    # # dealer, splitsecret
+    # pvss_dealer = Pvss()
+    # pvss_dealer.set_params(params)
+    # pvss_dealer.add_user_public_key(chris_pub)
+    # pvss_dealer.add_user_public_key(alice_pub)
+    # pvss_dealer.add_user_public_key(boris_pub)
+    
 
-    # receiver, genreceiver
-    pvss_receiver = Pvss()
-    pvss_receiver.set_params(params)
-    recv_priv, recv_pub = pvss_receiver.create_receiver_keypair("receiver")
+    # # receiver, genreceiver
+    # pvss_receiver = Pvss()
+    # pvss_receiver.set_params(params)
+    # recv_priv, recv_pub = pvss_receiver.create_receiver_keypair("receiver")
 
+    # pvss_boris.add_user_public_key(alice_pub)
+    # pvss_boris.add_user_public_key(chris_pub)
+    # pvss_boris.set_receiver_public_key(recv_pub)
+    # pvss_alice.add_user_public_key(boris_pub)
+    # pvss_alice.add_user_public_key(chris_pub)
+    # pvss_alice.set_receiver_public_key(recv_pub)
+    # pvss_receiver.add_user_public_key(boris_pub)
+    # pvss_receiver.add_user_public_key(chris_pub)
+    # pvss_receiver.add_user_public_key(alice_pub)
+
+    # secret0, shares = pvss_dealer.share_secret(2)
+    # print(f"Shares: {shares}")
+    # pvss_boris.set_shares(shares)
+    # pvss_alice.set_shares(shares)
+    # pvss_receiver.set_shares(shares)
+    
 
     if party == "alice":
-        alice = ServiceProvider(circuit_path, pvss_dealer, oblivious_transfer=False)
+        alice = ServiceProvider(circuit_path, oblivious_transfer=False)
         alice.start()
         alice.listen()
     elif party == "bob":
-        bob = AccessController(pvss_alice, pvss_boris, pvss_chris, oblivious_transfer=False)
+        bob = AccessController(oblivious_transfer=False)
         bob.listen()
     elif party == "carol":
-        carol = User(pvss_receiver)
+        carol = User()
         carol.start()
     elif party == "local":
         local = LocalTest(circuit_path, print_mode=print_mode)
