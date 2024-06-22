@@ -7,6 +7,7 @@ from pvss.ristretto_255 import create_ristretto_255_parameters
 from abc import ABC, abstractmethod
 import logging
 import time
+import timeit
 import base64
 import os
 import subprocess
@@ -63,6 +64,10 @@ class ServiceProvider(YaoGarbler):
         self.params = create_ristretto_255_parameters(pvss_init)
         self.pvss_dealer = Pvss()
         self.pvss_dealer.set_params(self.params)
+        self.secend = 100
+        self.squarings_per_second = 10000
+        self.message = "This is a vote for Myrto".encode()
+
     def update_dealer(self):
         result = self.socket.send_wait_to_evaluator(True)
         self.alice_pub = result["alice_pub"]
@@ -83,12 +88,22 @@ class ServiceProvider(YaoGarbler):
         # secret0, shares = self.pvss_dealer.share_secret(2) # put inside
         # print(f"Shares: {shares}")
         for circuit in self.circuits:
+            p, q, n, a, t, encrypted_key, encrypted_message, original_key = puzzle.encrypt(
+                self.message,
+                self.secend,
+                self.squarings_per_second
+            )
             to_send = {
                 "source": "garbler",
                 "circuit": circuit["circuit"],
                 "garbled_tables": circuit["garbled_tables"],
                 "pbits_out": circuit["pbits_out"],
                 "params": self.params,
+                "n": n,
+                "a": a,
+                "t": t,
+                "encrypted_key": encrypted_key,
+                "encrypted_message": encrypted_message,
                 # "shares": shares,
             }
             logging.debug(f"Sending {circuit['circuit']['id']}")
@@ -271,6 +286,21 @@ class AccessController:
 
             print(f"Received {circuit['id']}")
             print(f"circuit: {circuit}")
+
+            n = entry["n"]
+            a = entry["a"]
+            t = entry["t"]
+            encrypted_key = entry["encrypted_key"]
+            encrypted_message = entry["encrypted_message"]
+            start_time = time.time()
+            puzzle.decrypt(n, a, t, encrypted_key, encrypted_message)
+            print(f"Time: {time.time() - start_time}")
+            # print(timeit.repeat(
+            #     'print(puzzle.decrypt(n, a, t, encrypted_key, encrypted_message))',
+            #     globals=globals(),
+            #     repeat=1,
+            #     number=1)
+            # )
 
             # Generate all possible inputs for both Alice and Bob
             for bits in [format(n, 'b').zfill(N) for n in range(2**N)]:
