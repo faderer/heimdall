@@ -1,0 +1,89 @@
+Company: Apple Inc.
+Stock Symbol: AAPL
+Current Price: $145.86
+Market Cap: $2.41T
+P/E Ratio: 28.32
+Dividend Yield: 0.60%
+52-Week High: $182.94
+52-Week Low: $129.04
+
+Company: Microsoft Corporation
+Stock Symbol: MSFT
+Current Price: $295.37
+Market Cap: $2.21T
+P/E Ratio: 33.65
+Dividend Yield: 0.80%
+52-Week High: $349.67
+52-Week Low: $224.26
+
+Company: Amazon.com, Inc.
+Stock Symbol: AMZN
+Current Price: $3,265.16
+Market Cap: $1.65T
+P/E Ratio: 58.59
+Dividend Yield: N/A
+52-Week High: $3,773.08
+52-Week Low: $2,707.04
+
+Company: Tesla, Inc.
+Stock Symbol: TSLA
+Current Price: $729.40
+Market Cap: $730.91B
+P/E Ratio: 374.66
+Dividend Yield: N/A
+52-Week High: $900.40
+52-Week Low: $546.98
+
+Company: Alphabet Inc. (Google)
+Stock Symbol: GOOGL
+Current Price: $2,754.95
+Market Cap: $1.84T
+P/E Ratio: 30.23
+Dividend Yield: N/A
+52-Week High: $3,019.33
+52-Week Low: $2,292.52
+
+Company: Facebook, Inc. (Meta)
+Stock Symbol: FB
+Current Price: $353.16
+Market Cap: $1.00T
+P/E Ratio: 24.68
+Dividend Yield: N/A
+52-Week High: $384.33
+52-Week Low: $244.61
+
+Company: Berkshire Hathaway Inc.
+Stock Symbol: BRK.A
+Current Price: $439,948.00
+Market Cap: $644.54B
+P/E Ratio: 25.47
+Dividend Yield: N/A
+52-Week High: $452,400.00
+52-Week Low: $351,560.00
+
+Company: JPMorgan Chase & Co.
+Stock Symbol: JPM
+Current Price: $158.35
+Market Cap: $469.88B
+P/E Ratio: 10.47
+Dividend Yield: 2.40%
+52-Week High: $172.96
+52-Week Low: $127.35
+
+Company: Johnson & Johnson
+Stock Symbol: JNJ
+Current Price: $168.01
+Market Cap: $441.51B
+P/E Ratio: 25.15
+Dividend Yield: 2.52%
+52-Week High: $179.92
+52-Week Low: $142.86
+
+Company: Visa Inc.
+Stock Symbol: V
+Current Price: $220.15
+Market Cap: $484.68B
+P/E Ratio: 45.73
+Dividend Yield: 0.55%
+52-Week High: $250.93
+52-Week Low: $190.10

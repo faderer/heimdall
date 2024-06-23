@@ -51,6 +51,16 @@ python setup.py install --user
 ```bash
 sudo npm install -g ganache-cli
 ```
+### Installing ipfs
+```bash
+wget https://dist.ipfs.tech/go-ipfs/v0.7.0/go-ipfs_v0.7.0_linux-amd64.tar.gz
+tar -xvzf go-ipfs_v0.7.0_linux-amd64.tar.gz
+cd go-ipfs
+sudo bash install.sh
+chmod +x /usr/local/bin/ipfs
+ipfs init
+ipfs daemon
+```
 ### Build heimdall
 ```bash
 git clone https://github.com/faderer/heimdall.git

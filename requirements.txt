@@ -13,4 +13,6 @@ sympy==1.10.1
 pvss==0.2.0
 pytest
 eth-brownie
+python-snarks
+ipfshttpclient
 git+https://github.com/Zokrates/pycrypto

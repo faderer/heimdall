@@ -7,15 +7,18 @@ from pvss.ristretto_255 import create_ristretto_255_parameters
 from abc import ABC, abstractmethod
 import logging
 import time
-import timeit
+import ipfshttpclient
+import requests
 import base64
 import os
 import subprocess
 import json
 import re
-from python_snarks import Groth, Calculator, gen_proof, is_valid
-from zkpy.ptau import PTau
-from zkpy.circuit import Circuit, GROTH, PLONK, FFLONK
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
+import hashlib
+
 
 
 logging.basicConfig(format="[%(levelname)s] %(message)s",
@@ -82,6 +85,36 @@ class ServiceProvider(YaoGarbler):
             "shares": self.shares,
         }
         self.socket.send_wait_to_evaluator(to_send)
+    
+    def encrypt_file(self, file_path, key):
+        backend = default_backend()
+        iv = os.urandom(16)
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
+        encryptor = cipher.encryptor()
+        padder = padding.PKCS7(algorithms.AES.block_size).padder()
+
+        with open(file_path, 'rb') as f:
+            plaintext = f.read()
+
+        padded_data = padder.update(plaintext) + padder.finalize()
+        ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+
+        encrypted_file_path = file_path + '.enc'
+        with open(encrypted_file_path, 'wb') as f:
+            f.write(iv + ciphertext)
+
+        return encrypted_file_path
+    
+    def upload_to_ipfs(self, file_path):
+        with open(file_path, 'rb') as file:
+            client = ipfshttpclient.connect('/dns/localhost/tcp/5001/http')
+            res = client.add(file_path)
+            return res
+    
+    def to_32_bytes_hash(self, data):
+        sha256 = hashlib.sha256()
+        sha256.update(data)
+        return sha256.digest()
 
     def start(self):
         """Start Yao protocol."""
@@ -109,6 +142,12 @@ class ServiceProvider(YaoGarbler):
             logging.debug(f"Sending {circuit['circuit']['id']}")
             self.socket.send_wait_to_evaluator(to_send)
             self.update_dealer()
+            file_path = "data/financial_info.txt"
+            key = self.to_32_bytes_hash(self.secret0)
+            encrypted_file_path = self.encrypt_file(file_path, key)
+            ipfs_hash = self.upload_to_ipfs(encrypted_file_path)
+            print(f"IPFS hash: {ipfs_hash}")
+            self.cid = ipfs_hash['Hash']
             self.print(circuit)
 
     def print(self, entry):
@@ -207,6 +246,7 @@ class ServiceProvider(YaoGarbler):
                         "boris_pub": self.boris_pub,
                         "chris_pub": self.chris_pub,
                         "shares": self.shares,
+                        "cid": self.cid,
                     }
                     self.socket.send(to_send)
                     print("Sent b_decode_keys:", b_decode_keys)
@@ -368,6 +408,37 @@ class User:
         self.pvss_receiver.add_user_public_key(chris_pub)
         self.pvss_receiver.set_shares(shares)
 
+    def download_from_ipfs(self, cid, output_path):
+        print(f"Downloading from IPFS: {cid}")
+        client = ipfshttpclient.connect('/dns/localhost/tcp/5001/http')
+        data = client.cat(cid)
+        with open(output_path, 'wb') as file:
+            file.write(data)
+    
+    def decrypt_file(self, encrypted_file_path, key):
+        backend = default_backend()
+        with open(encrypted_file_path, 'rb') as f:
+            iv = f.read(16)
+            ciphertext = f.read()
+
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
+        decryptor = cipher.decryptor()
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+
+        padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+        plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
+
+        decrypted_file_path = encrypted_file_path.replace('.enc', '.dec')
+        with open(decrypted_file_path, 'wb') as f:
+            f.write(plaintext)
+
+        return decrypted_file_path
+    
+    def to_32_bytes_hash(self, data):
+        sha256 = hashlib.sha256()
+        sha256.update(data)
+        return sha256.digest()
+
     def request_b_decode_keys(self, circuit_id):
         request = {"circuit_id": circuit_id}
         print("Sending request:", request)
@@ -376,6 +447,7 @@ class User:
         response = self.socket.receive_from_garbler()
         print("Received b_decode_keys:", response["b_decode_keys"])
         self.init_receiver(response["params"], response["alice_pub"], response["boris_pub"], response["chris_pub"], response["shares"])
+        self.cid = response["cid"]
         return response["b_decode_keys"]
     
     def start(self):
@@ -439,14 +511,11 @@ class User:
         self.pvss_receiver.add_reencrypted_share(reenc_boris)
         secret1 = self.pvss_receiver.reconstruct_secret(self.recv_priv)
         print("Received reencrypted shares:", secret1)
+        self.download_from_ipfs(self.cid, "data/financial_info_down.txt.enc")
+        key = self.to_32_bytes_hash(secret1)
+        decrypted_file_path = self.decrypt_file("data/financial_info_down.txt.enc", key)
+        print(f"Decrypted file: {decrypted_file_path}")
 
-        # result = subprocess.run(command9, capture_output=True, shell=True, check=True)
-        # output = result.stdout.decode('utf-8')
-        # clean_output = re.sub(r'\x1b\[[0-9;]*m', '', output).strip()
-        # if "snarkJS: OK" in clean_output:
-        #     print("Verification successful")
-        # else:
-        #     print("Verification failed")
 def main(
     party,
     circuit_path="circuits/default.json",
@@ -456,55 +525,7 @@ def main(
 ):
     logging.getLogger().setLevel(loglevel)
 
-    # # init, genparams
-    # pvss_init = Pvss()
-    # params = create_ristretto_255_parameters(pvss_init)
-
-    # # alice, genuser
-    # pvss_alice = Pvss()
-    # pvss_alice.set_params(params)
-    # alice_priv, alice_pub = pvss_alice.create_user_keypair("Alice")
-
-    # # boris, genuser
-    # pvss_boris = Pvss()
-    # pvss_boris.set_params(params)
-    # boris_priv, boris_pub = pvss_boris.create_user_keypair("Boris")
-
-    # # chris, genuser
-    # pvss_chris = Pvss()
-    # pvss_chris.set_params(params)
-    # chris_priv, chris_pub = pvss_chris.create_user_keypair("Chris")
-
-    # # dealer, splitsecret
-    # pvss_dealer = Pvss()
-    # pvss_dealer.set_params(params)
-    # pvss_dealer.add_user_public_key(chris_pub)
-    # pvss_dealer.add_user_public_key(alice_pub)
-    # pvss_dealer.add_user_public_key(boris_pub)
     
-
-    # # receiver, genreceiver
-    # pvss_receiver = Pvss()
-    # pvss_receiver.set_params(params)
-    # recv_priv, recv_pub = pvss_receiver.create_receiver_keypair("receiver")
-
-    # pvss_boris.add_user_public_key(alice_pub)
-    # pvss_boris.add_user_public_key(chris_pub)
-    # pvss_boris.set_receiver_public_key(recv_pub)
-    # pvss_alice.add_user_public_key(boris_pub)
-    # pvss_alice.add_user_public_key(chris_pub)
-    # pvss_alice.set_receiver_public_key(recv_pub)
-    # pvss_receiver.add_user_public_key(boris_pub)
-    # pvss_receiver.add_user_public_key(chris_pub)
-    # pvss_receiver.add_user_public_key(alice_pub)
-
-    # secret0, shares = pvss_dealer.share_secret(2)
-    # print(f"Shares: {shares}")
-    # pvss_boris.set_shares(shares)
-    # pvss_alice.set_shares(shares)
-    # pvss_receiver.set_shares(shares)
-    
-
     if party == "alice":
         alice = ServiceProvider(circuit_path, oblivious_transfer=False)
         alice.start()
