@@ -1,5 +1,17 @@
 # heimdall
 This repository is a decentralized access control system for off-chain service supporting fair access and policy confidentiality.
+## Structure
+- `GC` contains the garbled circuit module.
+    - `yao` contains the yao's garbled circuit implementation.
+    - `ot` contains the oblivious transfer implementation.
+    - `utils` contains the utility functions for socket communication and prime calculation.
+- `circuits` contains the garbled circuits.
+- `PVTSS` contains the pvss and tlp module.
+- `ZK` contains the zero-knowledge proof circuit.
+- `VE` contains the verifiable encryption module.
+- `FE` contains the functional encryption module.
+- `JWT` contains the JSON Web Token module.
+- `data` contains the plaintext and ciphertext data owned by the service provider.
 ## How to build
 This project is built using Rust, Python and Circom in Linux system. The following instructions will guide you through the installation of the necessary dependencies.
 ### Installing dependency
@@ -66,10 +78,17 @@ ipfs daemon
 git clone https://github.com/faderer/heimdall.git
 cd heimdall
 pip install -r requirements.txt
-cd zk
+cd ZK
 cargo build --release
 cd ..
-cd secret-nft
-python secret_nft/compile_zk.py
-pytest -s
+cd VE
+python src/compile_zk.py
 ```
+## Usage
+### Running the tests
+1. By default all tests are done on the local network. You can edit the network informations in `GC/utils.py`.
+2. Run the access controller (Bob): `make bob`.
+3. In another terminal, run the service provider (Alice): `python3 main.py alice -c <circuit.json>`.
+4. In another terminal, run the client (Carol): `make carol`.
+### The workflow
+First, Alice will send the encrypted data to the IPFS network and send the garbled circuit to Bob. Then, Alice will split the secret key and send them to Bob. Upon recieving the request from Carol, Alice will send the labels information to Carol. After recieving the labels information, Carol will send the encoded input to Bob with zero-knowledge proof. Bob will then verify the zero-knowledge proof, evaluate the garbled circuit and send the secret shares to Carol. Carol will then reconstruct the secret key and decrypt the data downloaded from IPFS.

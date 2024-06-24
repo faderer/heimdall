@@ -57,7 +57,6 @@ class ObliviousTransfer:
 
         logging.debug("Received Alice's inputs")
 
-        ec_start = time.time()
         for w, b_input in b_inputs.items():
             logging.debug(f"Sending gate ID {w}")
             self.socket.send(w)
@@ -68,20 +67,11 @@ class ObliviousTransfer:
                 pair = self.socket.receive()
                 logging.debug(f"Received key pair, key {b_input} selected")
                 b_inputs_encr[w] = pair[b_input]
-        ec_end = time.time()
-        print(f"Encode time: {ec_end - ec_start}")
-                # b_pair[w] = pair
-        # print(f"b_pair: {b_pair}")
-        # print(f"b_inputs: {b_inputs}")
 
-        ev_start = time.time()
         result = yao.evaluate(circuit, g_tables, pbits_out, a_inputs,
                               b_inputs_encr)
-        ev_end = time.time()
-        print(f"Eval time: {ev_end - ev_start}")
         logging.debug("Sending circuit evaluation")
         self.socket.send(result)
-        print(f"Result: {result}")
 
     def ot_garbler(self, msgs):
         """Oblivious transfer, Alice's side.

@@ -51,16 +51,10 @@ class YaoGarbler(ABC):
 
 class ServiceProvider(YaoGarbler):
     def __init__(self, circuits, oblivious_transfer=False):
-        alice_start = time.time()
         super().__init__(circuits)
-        alice_end = time.time()
-        print(f"Garble time: {alice_end - alice_start}")
-        send_start = time.time()
         self.socket = util.GarblerSocket()
         self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
         self.init_dealer()
-        print(f"Send time: {time.time() - send_start}")
-        print(f"OT enabled: {oblivious_transfer}")
 
     def init_dealer(self):
         pvss_init = Pvss()
@@ -80,7 +74,6 @@ class ServiceProvider(YaoGarbler):
         self.pvss_dealer.add_user_public_key(self.alice_pub)
         self.pvss_dealer.add_user_public_key(self.boris_pub)
         self.secret0, self.shares = self.pvss_dealer.share_secret(2)
-        print(f'secret0: {self.secret0}')
         to_send = {
             "shares": self.shares,
         }
@@ -146,7 +139,6 @@ class ServiceProvider(YaoGarbler):
             key = self.to_32_bytes_hash(self.secret0)
             encrypted_file_path = self.encrypt_file(file_path, key)
             ipfs_hash = self.upload_to_ipfs(encrypted_file_path)
-            print(f"IPFS hash: {ipfs_hash}")
             self.cid = ipfs_hash['Hash']
             self.print(circuit)
 
@@ -157,7 +149,6 @@ class ServiceProvider(YaoGarbler):
             entry: A dict representing the circuit to evaluate.
         """
         circuit, pbits, keys = entry["circuit"], entry["pbits"], entry["keys"]
-        print(f"gates_num: {len(circuit['gates'])}")
         outputs = circuit["out"]
         a_wires = circuit.get("alice", [])  # Alice's wires
         a_inputs = {}  # map from Alice's wires to (key, encr_bit) inputs
@@ -178,9 +169,6 @@ class ServiceProvider(YaoGarbler):
                                    int.from_bytes(base64.urlsafe_b64decode(key1), byteorder='big'))
             for w, (key0, key1) in keys.items() if w in b_wires
         }
-        print(f"b_keys: {b_keys}")
-        print(f"b_bytes_keys: {b_bytes_keys}")
-        print(f"b_decode_keys: {b_decode_keys}")
 
         # wire numbers of input
         N = len(a_wires) + len(b_wires)
@@ -204,9 +192,9 @@ class ServiceProvider(YaoGarbler):
             str_bits_b = ' '.join(bits[len(a_wires):])
             str_result = ' '.join([str(result[w]) for w in outputs])
 
-            print(f"  Alice{a_wires} = {str_bits_a} "
-                  f"Bob{b_wires} = {str_bits_b}  "
-                  f"Outputs{outputs} = {str_result}")
+            # print(f"  Alice{a_wires} = {str_bits_a} "
+            #       f"Bob{b_wires} = {str_bits_b}  "
+            #       f"Outputs{outputs} = {str_result}")
 
         print()
 
@@ -219,7 +207,6 @@ class ServiceProvider(YaoGarbler):
         while True:
             # Wait for incoming request
             message = self.socket.receive()
-            print("Received request:", message)
             
             # Assume message contains the necessary information to identify the circuit
             circuit_id = message.get("circuit_id")
@@ -249,7 +236,6 @@ class ServiceProvider(YaoGarbler):
                         "cid": self.cid,
                     }
                     self.socket.send(to_send)
-                    print("Sent b_decode_keys:", b_decode_keys)
                     break
 
 class AccessController:
@@ -321,20 +307,14 @@ class AccessController:
             garbled_tables = entry["garbled_tables"]
             a_wires = circuit.get("alice", [])  # list of Alice's wires
             b_wires = circuit.get("bob", [])  # list of Bob's wires
-            print(f"Bobs wires: {b_wires}")
             N = len(a_wires) + len(b_wires)
-
-            print(f"Received {circuit['id']}")
-            print(f"circuit: {circuit}")
 
             n = entry["n"]
             a = entry["a"]
             t = entry["t"]
             encrypted_key = entry["encrypted_key"]
             encrypted_message = entry["encrypted_message"]
-            start_time = time.time()
             puzzle.decrypt(n, a, t, encrypted_key, encrypted_message)
-            print(f"Time: {time.time() - start_time}")
             # print(timeit.repeat(
             #     'print(puzzle.decrypt(n, a, t, encrypted_key, encrypted_message))',
             #     globals=globals(),
@@ -409,7 +389,6 @@ class User:
         self.pvss_receiver.set_shares(shares)
 
     def download_from_ipfs(self, cid, output_path):
-        print(f"Downloading from IPFS: {cid}")
         client = ipfshttpclient.connect('/dns/localhost/tcp/5001/http')
         data = client.cat(cid)
         with open(output_path, 'wb') as file:
@@ -441,11 +420,9 @@ class User:
 
     def request_b_decode_keys(self, circuit_id):
         request = {"circuit_id": circuit_id}
-        print("Sending request:", request)
         self.socket.send_to_garbler(request)
         
         response = self.socket.receive_from_garbler()
-        print("Received b_decode_keys:", response["b_decode_keys"])
         self.init_receiver(response["params"], response["alice_pub"], response["boris_pub"], response["chris_pub"], response["shares"])
         self.cid = response["cid"]
         return response["b_decode_keys"]
@@ -510,7 +487,6 @@ class User:
         self.pvss_receiver.add_reencrypted_share(reenc_alice)
         self.pvss_receiver.add_reencrypted_share(reenc_boris)
         secret1 = self.pvss_receiver.reconstruct_secret(self.recv_priv)
-        print("Received reencrypted shares:", secret1)
         self.download_from_ipfs(self.cid, "data/financial_info_down.txt.enc")
         key = self.to_32_bytes_hash(secret1)
         decrypted_file_path = self.decrypt_file("data/financial_info_down.txt.enc", key)
