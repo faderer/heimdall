@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 import hashlib
+from mife.single.lwe import FeLWE
 
 
 
@@ -98,6 +99,15 @@ class ServiceProvider(YaoGarbler):
 
         return encrypted_file_path
     
+    def functional_encryption(self, x, y):
+        # len(x) == len(y)
+        n = len(x)
+        key = FeLWE.generate(n, 4, 4)
+        c = FeLWE.encrypt(x, key)
+        sk = FeLWE.keygen(y, key)
+        return c, sk
+
+    
     def upload_to_ipfs(self, file_path):
         with open(file_path, 'rb') as file:
             client = ipfshttpclient.connect('/dns/localhost/tcp/5001/http')
@@ -119,6 +129,7 @@ class ServiceProvider(YaoGarbler):
                 self.secend,
                 self.squarings_per_second
             )
+            print("Encrypt the puzzle")
             to_send = {
                 "source": "garbler",
                 "circuit": circuit["circuit"],
@@ -134,12 +145,18 @@ class ServiceProvider(YaoGarbler):
             }
             logging.debug(f"Sending {circuit['circuit']['id']}")
             self.socket.send_wait_to_evaluator(to_send)
+            print("Garble the circuit")
             self.update_dealer()
+            print("Split the secret")
             file_path = "data/financial_info.txt"
             key = self.to_32_bytes_hash(self.secret0)
             encrypted_file_path = self.encrypt_file(file_path, key)
             ipfs_hash = self.upload_to_ipfs(encrypted_file_path)
             self.cid = ipfs_hash['Hash']
+            print("Encrypt the data and send the ciphertext to IPFS")
+            x = [i for i in range(10)]
+            y = [1/n for i in range(10)]
+            c, sk = self.functional_encryption(x, y)
             self.print(circuit)
 
     def print(self, entry):
@@ -315,6 +332,7 @@ class AccessController:
             encrypted_key = entry["encrypted_key"]
             encrypted_message = entry["encrypted_message"]
             puzzle.decrypt(n, a, t, encrypted_key, encrypted_message)
+            print("Time puzzle decrypted")
             # print(timeit.repeat(
             #     'print(puzzle.decrypt(n, a, t, encrypted_key, encrypted_message))',
             #     globals=globals(),
@@ -477,6 +495,7 @@ class User:
             "verification_key": verification_key,
             "recv_pub": self.recv_pub,
         }
+        print("Proof generated")
 
         # true = self.socket.receive_from_evaluator()
         self.socket.send_wait_to_evaluator(to_send)
@@ -487,6 +506,7 @@ class User:
         self.pvss_receiver.add_reencrypted_share(reenc_alice)
         self.pvss_receiver.add_reencrypted_share(reenc_boris)
         secret1 = self.pvss_receiver.reconstruct_secret(self.recv_priv)
+        print("Secret recovered")
         self.download_from_ipfs(self.cid, "data/financial_info_down.txt.enc")
         key = self.to_32_bytes_hash(secret1)
         decrypted_file_path = self.decrypt_file("data/financial_info_down.txt.enc", key)

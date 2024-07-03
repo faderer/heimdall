@@ -26,7 +26,6 @@ To have Rust available in your system, you can install rustup. If you’re using
 curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh
 ```
 ### Installing Circom
-To have circom available in your system, you can install circom:
 ```bash
 git clone https://github.com/iden3/circom.git
 cd circom
@@ -34,9 +33,12 @@ cargo build --release
 cargo install --path circom
 ```
 ### Installing ZoKrates
-To have ZoKrates available in your system, you can install ZoKrates:
 ```bash
 curl -LSfs get.zokrat.es | sh
+```
+### Installing snarkjs
+```bash
+npm install -g snarkjs
 ```
 ### Installing Python
 Download [Python 3.7](https://www.python.org/downloads/) or higher
@@ -82,13 +84,14 @@ cd ZK
 cargo build --release
 cd ..
 cd VE
-python src/compile_zk.py
+python secret_nft/compile_zk.py
 ```
 ## Usage
 ### Running the tests
 1. By default all tests are done on the local network. You can edit the network informations in `GC/utils.py`.
-2. Run the access controller (Bob): `make bob`.
-3. In another terminal, run the service provider (Alice): `python3 main.py alice -c <circuit.json>`.
-4. In another terminal, run the client (Carol): `make carol`.
+2. Start the IPFS daemon: `ipfs daemon`.
+3. Run the access controller (Bob): `make bob`.
+4. In another terminal, run the service provider (Alice): `python3 main.py alice -c <circuit.json>`.
+5. In another terminal, run the client (Carol): `make carol`.
 ### The workflow
 First, Alice will send the encrypted data to the IPFS network and send the garbled circuit to Bob. Then, Alice will split the secret key and send them to Bob. Upon recieving the request from Carol, Alice will send the labels information to Carol. After recieving the labels information, Carol will send the encoded input to Bob with zero-knowledge proof. Bob will then verify the zero-knowledge proof, evaluate the garbled circuit and send the secret shares to Carol. Carol will then reconstruct the secret key and decrypt the data downloaded from IPFS.

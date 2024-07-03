@@ -15,4 +15,5 @@ pytest
 eth-brownie
 python-snarks
 ipfshttpclient
+pymife
 git+https://github.com/Zokrates/pycrypto
