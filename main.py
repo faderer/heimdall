@@ -129,7 +129,7 @@ class ServiceProvider(YaoGarbler):
                 self.secend,
                 self.squarings_per_second
             )
-            print("Encrypt the puzzle")
+            print("1.Encrypt the puzzle")
             to_send = {
                 "source": "garbler",
                 "circuit": circuit["circuit"],
@@ -145,15 +145,15 @@ class ServiceProvider(YaoGarbler):
             }
             logging.debug(f"Sending {circuit['circuit']['id']}")
             self.socket.send_wait_to_evaluator(to_send)
-            print("Garble the circuit")
+            print("2.Garble the circuit")
             self.update_dealer()
-            print("Split the secret")
+            print("3.Split the secret")
             file_path = "data/financial_info.txt"
             key = self.to_32_bytes_hash(self.secret0)
             encrypted_file_path = self.encrypt_file(file_path, key)
             ipfs_hash = self.upload_to_ipfs(encrypted_file_path)
             self.cid = ipfs_hash['Hash']
-            print("Encrypt the data and send the ciphertext to IPFS")
+            print("4.Encrypt the data and send the ciphertext to IPFS")
             x = [i for i in range(10)]
             y = [1/n for i in range(10)]
             c, sk = self.functional_encryption(x, y)
@@ -332,7 +332,7 @@ class AccessController:
             encrypted_key = entry["encrypted_key"]
             encrypted_message = entry["encrypted_message"]
             puzzle.decrypt(n, a, t, encrypted_key, encrypted_message)
-            print("Time puzzle decrypted")
+            print("5.Time puzzle decrypted")
             # print(timeit.repeat(
             #     'print(puzzle.decrypt(n, a, t, encrypted_key, encrypted_message))',
             #     globals=globals(),
@@ -386,9 +386,9 @@ class AccessController:
             }
             if "snarkJS: OK" in clean_output:
                 self.socket.send(to_send)
-                print("Verification successful")
+                print("7.Verification successful")
             else:
-                print("Verification failed")
+                print("7.Verification failed")
             os.chdir(original_directory)
 
 
@@ -495,7 +495,7 @@ class User:
             "verification_key": verification_key,
             "recv_pub": self.recv_pub,
         }
-        print("Proof generated")
+        print("6.Proof generated")
 
         # true = self.socket.receive_from_evaluator()
         self.socket.send_wait_to_evaluator(to_send)
@@ -506,11 +506,11 @@ class User:
         self.pvss_receiver.add_reencrypted_share(reenc_alice)
         self.pvss_receiver.add_reencrypted_share(reenc_boris)
         secret1 = self.pvss_receiver.reconstruct_secret(self.recv_priv)
-        print("Secret recovered")
+        print("8.Secret recovered")
         self.download_from_ipfs(self.cid, "data/financial_info_down.txt.enc")
         key = self.to_32_bytes_hash(secret1)
         decrypted_file_path = self.decrypt_file("data/financial_info_down.txt.enc", key)
-        print(f"Decrypted file: {decrypted_file_path}")
+        print(f"9.Decrypted file: {decrypted_file_path}")
 
 def main(
     party,
