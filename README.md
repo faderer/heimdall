@@ -5,13 +5,14 @@ This repository is a decentralized access control system for off-chain service s
     - `yao` contains the yao's garbled circuit implementation.
     - `ot` contains the oblivious transfer implementation.
     - `utils` contains the utility functions for socket communication and prime calculation.
-- `circuits` contains the garbled circuits.
+- `circuits` contains the boolean circuits.
 - `PVTSS` contains the pvss and tlp module.
 - `ZK` contains the zero-knowledge proof circuit.
 - `VE` contains the verifiable encryption module.
 - `FE` contains the functional encryption module.
 - `JWT` contains the JSON Web Token module.
 - `data` contains the plaintext and ciphertext data owned by the service provider.
+- `main.py` is the main module for the service provider, access controller and client.
 ## How to build
 This project is built using Rust, Python and Circom in Linux system. The following instructions will guide you through the installation of the necessary dependencies.
 ### Installing dependency
@@ -95,3 +96,14 @@ python secret_nft/compile_zk.py
 5. In another terminal, run the client (Carol): `make carol`.
 ### The workflow
 First, Alice will send the encrypted data to the IPFS network and send the garbled circuit to Bob. Then, Alice will split the secret key and send them to Bob. Upon recieving the request from Carol, Alice will send the labels information to Carol. After recieving the labels information, Carol will send the encoded input to Bob with zero-knowledge proof. Bob will then verify the zero-knowledge proof, evaluate the garbled circuit and send the secret shares to Carol. Carol will then reconstruct the secret key and decrypt the data downloaded from IPFS.
+```
+1.Encrypt the puzzle
+2.Garble the circuit
+3.Split the secret
+4.Encrypt the data and send the ciphertext to IPFS
+5.Time puzzle decrypted
+6.Proof generated
+7.Verification successful
+8.Secret recovered
+9.Decrypted file: data/financial_info_down.txt.dec
+```
