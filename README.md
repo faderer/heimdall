@@ -96,7 +96,7 @@ python secret_nft/compile_zk.py
 5. In another terminal, run the client (Carol): `make carol`.
 ### The workflow
 First, Alice will send the encrypted data to the IPFS network and send the garbled circuit to Bob. Then, Alice will split the secret key and send them to Bob. Upon recieving the request from Carol, Alice will send the labels information to Carol. After recieving the labels information, Carol will send the encoded input to Bob with zero-knowledge proof. Bob will then verify the zero-knowledge proof, evaluate the garbled circuit and send the secret shares to Carol. Carol will then reconstruct the secret key and decrypt the data downloaded from IPFS.
-```
+```bash
 1.Encrypt the puzzle
 2.Garble the circuit
 3.Split the secret
